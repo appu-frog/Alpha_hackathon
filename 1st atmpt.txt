@@ -1,0 +1,678 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "7bdb9f48-af7b-4722-b9a8-7a14f8a206ec",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Вопросы:\n",
+      "   q_id                                              query\n",
+      "0     1                                        Номер счета\n",
+      "1     2                              Где узнать бик и счёт\n",
+      "2     3  Мне не приходят коды для подтверждения данной ...\n",
+      "3     4  Оформила рассрочку ,но уведомлений никаких не ...\n",
+      "4     5  Здравствуйте, когда смогу пользоваться кредитн...\n",
+      "\n",
+      "База знаний (сайты):\n",
+      "   web_id                                   url  kind  \\\n",
+      "0       1                  https://alfabank.ru/  html   \n",
+      "1       2           https://alfabank.ru/a-club/  html   \n",
+      "2       3  https://alfabank.ru/a-club/ultimate/  html   \n",
+      "3       4    https://alfabank.ru/actions/rules/  html   \n",
+      "4       5       https://alfabank.ru/alfafuture/  html   \n",
+      "\n",
+      "                                               title  \\\n",
+      "0  Альфа-Банк - кредитные и дебетовые карты, кред...   \n",
+      "1                      А-Клуб. Деньги имеют значение   \n",
+      "2                      А-Клуб. Деньги имеют значение   \n",
+      "3                                   Скидки по картам   \n",
+      "4  Альфа‑Будущее: Платформа для развития студенто...   \n",
+      "\n",
+      "                                                text  \n",
+      "0  Рассчитайте выгоду\\nРасчёт калькулятора предва...  \n",
+      "1  Брокерские услуги\\nОткрытие брокерского счёта ...  \n",
+      "2  Хотите получить больше информации?\\nПозвоните ...  \n",
+      "3  Правила проведения Акции «Альфа Пятница. Бараб...  \n",
+      "4  Образование\\nМагистратуры\\nМагистратура ВШЭ\\nМ...  \n"
+     ]
+    }
+   ],
+   "source": [
+    "import pandas as pd\n",
+    "\n",
+    "try:\n",
+    "    questions = pd.read_csv('questions_clean.csv')\n",
+    "    websites = pd.read_csv('websites.csv')\n",
+    "    sample_submission = pd.read_csv('sample_submission.csv')\n",
+    "    print(\"Вопросы:\")\n",
+    "    print(questions.head())\n",
+    "    print(\"\\nБаза знаний (сайты):\")\n",
+    "    print(websites.head())\n",
+    "    \n",
+    "except FileNotFoundError:\n",
+    "    print(\"Ошибка: Убедитесь, что файлы Questions.csv и Websites.csv находятся в той же папке.\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "342afc1a-0f09-401c-a464-7941a02faaeb",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Начинаем процесс чанкования...\n",
+      "Готово. Получили 9902 чанков из 1937 документов.\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Этот код вставляем после загрузки websites.csv\n",
+    "\n",
+    "# -- Начало нового блока (Чанкование) --\n",
+    "\n",
+    "def get_chunks(text, chunk_size=256, overlap=64):\n",
+    "    \"\"\"Простая функция для нарезки текста на слова.\"\"\"\n",
+    "    words = text.split()\n",
+    "    if not words:\n",
+    "        return []\n",
+    "    \n",
+    "    chunks = []\n",
+    "    for i in range(0, len(words), chunk_size - overlap):\n",
+    "        chunk_words = words[i:i + chunk_size]\n",
+    "        chunks.append(\" \".join(chunk_words))\n",
+    "    return chunks\n",
+    "\n",
+    "chunk_data = [] # Это будет наша новая \"база знаний\"\n",
+    "\n",
+    "print(\"Начинаем процесс чанкования...\")\n",
+    "\n",
+    "# Итерируемся по каждой строке в websites\n",
+    "for index, row in websites.iterrows():\n",
+    "    web_id = row['web_id']\n",
+    "    title = row['title'] if pd.notna(row['title']) else ''\n",
+    "    text = row['text'] if pd.notna(row['text']) else ''\n",
+    "    \n",
+    "    # Мы добавим заголовок к каждому чанку, это часто улучшает релевантность\n",
+    "    # (модель будет знать, из какого раздела этот текст)\n",
+    "    text_with_title = f\"Заголовок: {title}\\nТекст: {text}\"\n",
+    "    \n",
+    "    chunks = get_chunks(text_with_title, chunk_size=256, overlap=64)\n",
+    "    \n",
+    "    for chunk_text in chunks:\n",
+    "        chunk_data.append({\n",
+    "            'web_id': web_id,  # Сохраняем, какому 'web_id' принадлежит чанк\n",
+    "            'text': chunk_text\n",
+    "        })\n",
+    "\n",
+    "print(f\"Готово. Получили {len(chunk_data)} чанков из {len(websites)} документов.\")\n",
+    "\n",
+    "# Создадим DataFrame из чанков для удобства\n",
+    "# (Это необязательно, но так проще)\n",
+    "chunks_df = pd.DataFrame(chunk_data)\n",
+    "\n",
+    "# -- Конец нового блока --"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "7f52f3e8-48e2-44c2-8e5f-a00934c21427",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "3954    Почему вношу минимальный платёж а основной дол...\n",
+       "Name: query, dtype: object"
+      ]
+     },
+     "execution_count": 3,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "questions['query'].sample()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "49282b2c-6eb1-46d7-aafa-2f9e73fa056d",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>q_id</th>\n",
+       "      <th>web_list</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>1013</th>\n",
+       "      <td>1014</td>\n",
+       "      <td>[394, 1223, 1270, 1929, 403]</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "      q_id                      web_list\n",
+       "1013  1014  [394, 1223, 1270, 1929, 403]"
+      ]
+     },
+     "execution_count": 4,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "sample_submission[sample_submission['q_id'] == 1014].sample()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "2e4ebeb4-24fc-44f4-8575-bf43f25ef579",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "1013    Здравствуйте, подскажите, сколько в день % нач...\n",
+       "Name: query, dtype: object"
+      ]
+     },
+     "execution_count": 5,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "questions[questions['q_id'] == 1014]['query'].sample()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "f04bfe4b-3ebf-4e58-8aa4-ace3cc77dee5",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>web_id</th>\n",
+       "      <th>url</th>\n",
+       "      <th>kind</th>\n",
+       "      <th>title</th>\n",
+       "      <th>text</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>393</th>\n",
+       "      <td>394</td>\n",
+       "      <td>https://alfabank.ru/help/articles/sme/start/ot...</td>\n",
+       "      <td>html</td>\n",
+       "      <td>Предпринимательство без регистрации: штрафы и ...</td>\n",
+       "      <td>Альфа-Банк\\nПолезное о продуктах\\nРассказываем...</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "     web_id                                                url  kind  \\\n",
+       "393     394  https://alfabank.ru/help/articles/sme/start/ot...  html   \n",
+       "\n",
+       "                                                 title  \\\n",
+       "393  Предпринимательство без регистрации: штрафы и ...   \n",
+       "\n",
+       "                                                  text  \n",
+       "393  Альфа-Банк\\nПолезное о продуктах\\nРассказываем...  "
+      ]
+     },
+     "execution_count": 6,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "websites[websites['web_id'] == 394].sample()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "c32f62bb-6de6-4cc2-8432-8fdbb3889da8",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Начинаем векторизацию корпуса (чанков)... Это займет больше времени.\n"
+     ]
+    },
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "629caba617fc4913b638226e690d2e0f",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "Batches:   0%|          | 0/310 [00:00<?, ?it/s]"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Начинаем векторизацию вопросов...\n"
+     ]
+    },
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "0b042e16765a4652a66c16b3c3ea051c",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "Batches:   0%|          | 0/219 [00:00<?, ?it/s]"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Форма эмбеддингов корпуса (чанков): (9902, 384)\n",
+      "Форма эмбеддингов вопросов: (6977, 384)\n"
+     ]
+    }
+   ],
+   "source": [
+    "from sentence_transformers import SentenceTransformer\n",
+    "\n",
+    "# 1. Загружаем модель\n",
+    "# 'paraphrase-multilingual-MiniLM-L12-v2' - хорошая, быстрая модель\n",
+    "model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2') \n",
+    "\n",
+    "# 2. Векторизуем базу знаний (сайты)\n",
+    "# Убедимся, что нет пропусков (NaN), иначе эмбеддер выдаст ошибку\n",
+    "print(\"Начинаем векторизацию корпуса (чанков)... Это займет больше времени.\")\n",
+    "# Передаем список текстов из наших чанков\n",
+    "corpus_embeddings = model.encode(\n",
+    "    chunks_df['text'].tolist(), \n",
+    "    show_progress_bar=True\n",
+    ")\n",
+    "\n",
+    "# Векторизация вопросов (этот блок остается БЕЗ ИЗМЕНЕНИЙ):\n",
+    "questions['query'] = questions['query'].fillna('')\n",
+    "print(\"Начинаем векторизацию вопросов...\")\n",
+    "query_embeddings = model.encode(\n",
+    "    questions['query'].tolist(), \n",
+    "    show_progress_bar=True\n",
+    ")\n",
+    "\n",
+    "print(f\"Форма эмбеддингов корпуса (чанков): {corpus_embeddings.shape}\")\n",
+    "print(f\"Форма эмбеддингов вопросов: {query_embeddings.shape}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "e285d647-3ed5-459f-8589-b6d7f5f64f4d",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Индекс создан. Всего векторов в базе (чанков): 9902\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Этот код остается таким же, он просто будет работать с эмбеддингами чанков\n",
+    "import faiss\n",
+    "import numpy as np\n",
+    "\n",
+    "corpus_embeddings = corpus_embeddings.astype('float32')\n",
+    "query_embeddings = query_embeddings.astype('float32')\n",
+    "\n",
+    "faiss.normalize_L2(corpus_embeddings)\n",
+    "faiss.normalize_L2(query_embeddings)\n",
+    "\n",
+    "d = corpus_embeddings.shape[1]\n",
+    "index = faiss.IndexFlatIP(d)    \n",
+    "\n",
+    "index.add(corpus_embeddings)\n",
+    "\n",
+    "print(f\"Индекс создан. Всего векторов в базе (чанков): {index.ntotal}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "33280b37-e507-4088-a1b9-f085fe37f74c",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Индекс создан. Всего векторов в базе (чанков): 9902\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Этот код остается таким же, он просто будет работать с эмбеддингами чанков\n",
+    "import faiss\n",
+    "import numpy as np\n",
+    "\n",
+    "corpus_embeddings = corpus_embeddings.astype('float32')\n",
+    "query_embeddings = query_embeddings.astype('float32')\n",
+    "\n",
+    "faiss.normalize_L2(corpus_embeddings)\n",
+    "faiss.normalize_L2(query_embeddings)\n",
+    "\n",
+    "d = corpus_embeddings.shape[1]\n",
+    "index = faiss.IndexFlatIP(d)    \n",
+    "\n",
+    "index.add(corpus_embeddings)\n",
+    "\n",
+    "print(f\"Индекс создан. Всего векторов в базе (чанков): {index.ntotal}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "bed986b3-94f2-4eaf-98db-7b4933006c7f",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Начинаем агрегацию (голосование) по web_id...\n",
+      "\n",
+      "Файл submit.csv (с чанкованием и голосованием) успешно создан!\n",
+      "   q_id  web_id\n",
+      "0     1     741\n",
+      "1     1     372\n",
+      "2     1    1721\n",
+      "3     1     334\n",
+      "4     1    1159\n",
+      "5     2     741\n",
+      "6     2     372\n",
+      "7     2     699\n",
+      "8     2      25\n",
+      "9     2       1\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Этот код полностью ЗАМЕНЯЕТ старый Шаг 5\n",
+    "\n",
+    "print(\"Начинаем агрегацию (голосование) по web_id...\")\n",
+    "\n",
+    "# Получаем массив `web_id` из нашего DataFrame чанков\n",
+    "# Порядок web_id здесь соответствует порядку эмбеддингов в faiss\n",
+    "chunk_web_ids_array = chunks_df['web_id'].values\n",
+    "\n",
+    "# Получаем массив `q_id` из questions\n",
+    "q_ids_array = questions['q_id'].values\n",
+    "\n",
+    "results_list = []\n",
+    "\n",
+    "# Итерируемся по каждому вопросу\n",
+    "for i in range(len(q_ids_array)):\n",
+    "    q_id = q_ids_array[i]\n",
+    "    \n",
+    "    # I[i] - это список из 50 *индексов чанков*\n",
+    "    top_chunk_indices = I[i]\n",
+    "    \n",
+    "    # Находим web_id, которые соответствуют этим чанкам\n",
+    "    top_web_ids = chunk_web_ids_array[top_chunk_indices]\n",
+    "    \n",
+    "    # --- Логика голосования ---\n",
+    "    # Считаем, как часто встречается каждый web_id\n",
+    "    # Используем pd.Series для быстрого подсчета\n",
+    "    # value_counts() автоматически сортирует по убыванию частоты\n",
+    "    web_id_votes = pd.Series(top_web_ids).value_counts()\n",
+    "    \n",
+    "    # Берем топ-5 web_id по \"голосованию\"\n",
+    "    top_5_web_ids = web_id_votes.head(5).index.tolist()\n",
+    "    \n",
+    "    # ---\n",
+    "    \n",
+    "    # Добавляем их в наш список для submit\n",
+    "    for web_id in top_5_web_ids:\n",
+    "        results_list.append({'q_id': q_id, 'web_id': web_id})\n",
+    "        \n",
+    "# Создаем финальный DataFrame\n",
+    "submit_df = pd.DataFrame(results_list)\n",
+    "\n",
+    "# Сохраняем в CSV\n",
+    "submit_df.to_csv('submit.csv', index=False)\n",
+    "\n",
+    "print(\"\\nФайл submit.csv (с чанкованием и голосованием) успешно создан!\")\n",
+    "print(submit_df.head(10))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "528e8cf0-4fa5-40b0-bf50-2e749782d1fe",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Поисковый запрос: 'Как получить кредитную карту?'\n",
+      "\n",
+      "--- Найдено 5 лучших web_id (по голосованию): ---\n",
+      "\n",
+      "Место #1: web_id = 1029 (встретился 2 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'Заголовок: Как правильно пользоваться кредитной картой без процентов — Секреты использования кредитки с выгодой Текст: Вы уже оформили кредитную карту или только собираетесь? Расскажем, как правильно ею пользоваться и не переплачивать. Кредитная карта — платёжное средство, деньги на котором принадле...'\n",
+      "\n",
+      "Место #2: web_id = 1041 (встретился 2 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'Заголовок: Как работает кредитная карта: принцип работы кредитки Текст: Альфа‑Банк Полезное о продуктах С кредитной картой можно бесплатно пользоваться деньгами банка — до 1 млн рублей. Если обновлять льготный период, не нужно платить проценты за покупки и переводы. Кредитку с нужной вам суммой выда...'\n",
+      "\n",
+      "Место #3: web_id = 1704 (встретился 2 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'может быть выдана одна Локальная карта ипотечного кредитования сроком на 5 (пять) лет. Локальная карта ипотечного кредитования без указания фамилии и имени держателя не перевыпускается. По окончании срока ее действия или в случае утраты такой карты, Клиент может обратиться в Отделение Банка для полу...'\n",
+      "\n",
+      "Место #4: web_id = 870 (встретился 2 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'в отдельной зоне в удобное время. К услугам держателей золотых карт — личный финансовый консультант, выделенная телефонная линия, а также доступ к программам привилегий Visa и Mastercard. Alfa-Miles Аэрофлот Cash Back РЖД и другие Стоимость годового обслуживания карты — от 0 рублей при соблюдении ус...'\n",
+      "\n",
+      "Место #5: web_id = 164 (встретился 1 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'в первый год бесплатное, далее — 990 ₽ в год, если пользовались кредиткой. Если клиент не совершает расходных операций по кредитной карте, обслуживание будет бесплатным Где я могу получить кредитную карту? Мы бесплатно привезём вам карту в удобное место и время. Или вы можете самостоятельно получить...'\n",
+      "\n",
+      "Поисковый запрос: 'Сколько стоит обслуживание Альфа-Карты?'\n",
+      "\n",
+      "--- Найдено 5 лучших web_id (по голосованию): ---\n",
+      "\n",
+      "Место #1: web_id = 1847 (встретился 2 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'всех остальных. Свыше максимальной суммы действует только базовая ставка. Для всех остальных клиентов Минимальный остаток за месяц Для всех клиентов Для клиентов Альфа-Премиум Для А-Клуба Процентная ставка, % годовых При покупках по дебетовым и кредитным картам от 10 000 ₽ При покупках по дебетовым ...'\n",
+      "\n",
+      "Место #2: web_id = 1849 (встретился 2 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'Заголовок: alfa_01102022.pdf Текст: Накопительный Альфа-Счёт Максимальный доход с первого месяца редакция от 01.10.2022 Процентные ставки в рублях Для первого открытого или пополненного Альфа-Счёта с 1-го по 2-й месяц без условий для всех, в % годовых 9% 3-й месяц и далее все клиенты Альфа-Премиум «...'\n",
+      "\n",
+      "Место #3: web_id = 851 (встретился 1 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'Виртуальной карты, карт Альфа-Cash Ультра / Альфа-Cash Лайф / Альфа-Бизнес / Альфа-Бизнес Премиум / Альфа-Cash Персона суммарным объемом за месяц. Совокупный лимит снятия наличных с использованием всех банковских карт, привязанных к счетам, составляет 300 000 ₽ в день и 5 000 000 ₽ в месяц. До 200 0...'\n",
+      "\n",
+      "Место #4: web_id = 119 (встретился 1 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'комиссия за обслуживание карты составит 3990 ₽ в первый год, далее — бесплатно. Если у вас на счетах от 3 млн ₽, вы можете выпустить одну металлическую карту (Alfa Only или Alfa Only Travel или Alfa Only х ЦУМ) бесплатно. Начиная со второй карты, комиссия за обслуживание каждой карты составит 3990 ₽...'\n",
+      "\n",
+      "Место #5: web_id = 1039 (встретился 1 раз)\n",
+      "  Пример релевантного чанка: \n",
+      "  'с лимитом до 1 000 000 ₽ можно только по паспорту. Условия кредитки от Альфа‑Банка: обслуживание 0 ₽ весь первый год (Или 590 ₽, если у вас уже есть активный договор на другую кредитную карту Альфа‑Банка) кэшбэк до 50% у партнёров каждый месяц бесплатная доставка карты по удобному вам адресу Получив...'\n",
+      "\n"
+     ]
+    }
+   ],
+   "source": [
+    "# --- Начало блока для проверки ---\n",
+    "\n",
+    "# Убедитесь, что эти переменные доступны в вашей сессии:\n",
+    "# model - наша SentenceTransformer модель\n",
+    "# index - наш faiss-индекс\n",
+    "# chunks_df - DataFrame с чанками и их web_id\n",
+    "\n",
+    "def check_my_question(query_text, k=5):\n",
+    "    print(f\"Поисковый запрос: '{query_text}'\\n\")\n",
+    "    \n",
+    "    # 1. Векторизуем ОДИН наш вопрос (по той же технологии)\n",
+    "    query_vector = model.encode([query_text]).astype('float32')\n",
+    "    \n",
+    "    # 2. Нормализуем его\n",
+    "    faiss.normalize_L2(query_vector)\n",
+    "    \n",
+    "    # 3. Ищем в индексе (faiss) k лучших чанков\n",
+    "    # Ищем k_candidates, чтобы потом проголосовать\n",
+    "    k_candidates = 50 \n",
+    "    D, I = index.search(query_vector, k_candidates)\n",
+    "    \n",
+    "    # I - это 2D массив, [[idx1, idx2, ...]], нам нужен первый элемент I[0]\n",
+    "    top_chunk_indices = I[0] \n",
+    "    \n",
+    "    # Получаем массив web_id из chunks_df\n",
+    "    chunk_web_ids_array = chunks_df['web_id'].values\n",
+    "    chunk_texts_array = chunks_df['text'].values\n",
+    "    \n",
+    "    # 4. Находим web_id, которые соответствуют этим чанкам\n",
+    "    top_web_ids = chunk_web_ids_array[top_chunk_indices]\n",
+    "    \n",
+    "    # 5. Голосование\n",
+    "    web_id_votes = pd.Series(top_web_ids).value_counts()\n",
+    "    \n",
+    "    # Берем топ-k web_id по \"голосованию\"\n",
+    "    top_k_web_ids = web_id_votes.head(k).index.tolist()\n",
+    "    \n",
+    "    print(f\"--- Найдено {k} лучших web_id (по голосованию): ---\\n\")\n",
+    "    \n",
+    "    for i, web_id in enumerate(top_k_web_ids):\n",
+    "        print(f\"Место #{i+1}: web_id = {web_id} (встретился {web_id_votes.iloc[i]} раз)\")\n",
+    "        \n",
+    "        # Найдем пример чанка, который привел к этому web_id\n",
+    "        # (Это немного сложно, но полезно для отладки)\n",
+    "        try:\n",
+    "            # Находим *первый* чанк в топ-50, который относится к этому web_id\n",
+    "            first_match_index_in_top_50 = np.where(top_web_ids == web_id)[0][0]\n",
+    "            original_chunk_index = top_chunk_indices[first_match_index_in_top_50]\n",
+    "            \n",
+    "            chunk_text_example = chunk_texts_array[original_chunk_index]\n",
+    "            print(f\"  Пример релевантного чанка: \\n  '{chunk_text_example[:300]}...'\\n\")\n",
+    "        except Exception as e:\n",
+    "            print(f\"  Не удалось найти пример чанка (ошибка: {e})\\n\")\n",
+    "\n",
+    "# --- Конец блока для проверки ---\n",
+    "\n",
+    "\n",
+    "# --- ПРИМЕР ИСПОЛЬЗОВАНИЯ ---\n",
+    "# Вызовите эту функцию с любым вопросом\n",
+    "# (После того как ваш скрипт создал 'model', 'index' и 'chunks_df')\n",
+    "\n",
+    "check_my_question(\"Как получить кредитную карту?\", k=5)\n",
+    "check_my_question(\"Сколько стоит обслуживание Альфа-Карты?\", k=5)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "0527f190-5a9b-4e1a-9fa2-f1d4e126bd46",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.13.5"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
